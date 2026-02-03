@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Countries</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Countries</h1>
+    <div class="meta">
+      <span id="resultInfo">Loading...</span>
+    </div>
+  </header>
+
+  <main class="container">
+    <section id="countriesGrid" class="grid"></section>
+
+    <nav class="pagination" aria-label="Pagination">
+      <button id="prevBtn" class="page-btn" type="button">← Prev</button>
+
+      <div id="pageNumbers" class="page-numbers"></div>
+
+      <button id="nextBtn" class="page-btn" type="button">Next →</button>
+    </nav>
+  </main>
+
+  <script src="index.js"></script>
+</body>
+</html>
