@@ -1,234 +1,245 @@
-const gridEl = document.getElementById("countriesGrid");
-const pageNumbersEl = document.getElementById("pageNumbers");
-const prevBtn = document.getElementById("prevBtn");
-const nextBtn = document.getElementById("nextBtn");
-const resultInfoEl = document.getElementById("resultInfo");
-const searchInput = document.getElementById("searchInput");
-const modal = document.getElementById("countryModal");
-const closeModalBtn = document.getElementById("closeModalBtn");
-const modalBody = document.getElementById("modalBody");
+(function () {
+  'use strict';
+  const CONFIG = {
+    API_COUNTRIES: 'https://restcountries.com/v3.1/all?fields=name,flags,region,capital,population,currencies,latlng,borders,cca3',
+    API_WEATHER: (lat, lon) =>
+      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code&timezone=auto`,
+    PAGE_SIZE: 16,
+    DEBOUNCE_MS: 300
+  };
+  const state = {
+    allCountries: [],
+    filteredCountries: [],
+    currentPage: 1,
+    totalPages: 1
+  };
+  const ui = {
+    grid: document.getElementById('countriesGrid'),
+    pageNumbers: document.getElementById('pageNumbers'),
+    prevBtn: document.getElementById('prevBtn'),
+    nextBtn: document.getElementById('nextBtn'),
+    info: document.getElementById('resultInfo'),
+    search: document.getElementById('searchInput'),
+    modal: document.getElementById('countryModal'),
+    modalBody: document.getElementById('modalBody'),
+    closeModal: document.getElementById('closeModalBtn')
+  };
+  const formatNum = (n) => new Intl.NumberFormat().format(n || 0);
+  const safeText = (v) => (v && (Array.isArray(v) ? v.join(', ') : v)) || 'N/A';
+  const debounce = (fn, delay) => {
+    let timeout;
+    return (...args) => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => fn.apply(this, args), delay);
+    };
+  };
+  const getWeatherText = (code) => {
+    if (code === 0) return 'Clear Sky';
+    if (code <= 3) return 'Partly Cloudy';
+    if (code <= 48) return 'Foggy';
+    if (code <= 67) return 'Rain';
+    if (code <= 77) return 'Snow';
+    if (code >= 95) return 'Thunderstorm';
+    return 'Variable';
+  };
+  async function init() {
+    ui.info.textContent = 'Loading countries...';
+    try {
+      const res = await fetch(CONFIG.API_COUNTRIES);
+      if (!res.ok) throw new Error('API Error');
+      const data = await res.json();
+      state.allCountries = data.sort((a, b) =>
+        (a.name.common || '').localeCompare(b.name.common || '')
+      );
+      state.filteredCountries = [...state.allCountries];
+      updatePagination();
+      render();
 
-const PAGE_SIZE = 16;
-let allCountries = [];
-let filteredCountries = [];
-let currentPage = 1;
-let totalPages = 1;
-function formatNumber(n) {
-  return new Intl.NumberFormat().format(n ?? 0);
-}
+      setupEventListeners();
+    } catch (err) {
+      ui.grid.innerHTML = `<div style="color:red; padding:20px;">Error loading data: ${err.message}. Please refresh.</div>`;
+      ui.info.textContent = 'Error';
+    }
+  }
+  function setupEventListeners() {
+    ui.search.addEventListener('input', debounce(handleSearch, CONFIG.DEBOUNCE_MS));
+    ui.prevBtn.addEventListener('click', () => changePage(-1));
+    ui.nextBtn.addEventListener('click', () => changePage(1));
+    ui.pageNumbers.addEventListener('click', (e) => {
+      if (e.target.dataset.page) goToPage(Number(e.target.dataset.page));
+    });
+    ui.closeModal.addEventListener('click', closeModal);
+    ui.modal.addEventListener('click', (e) => {
+      if (e.target === ui.modal) closeModal();
+    });
+    ui.grid.addEventListener('click', (e) => {
+      const card = e.target.closest('.card');
+      if (card && card.dataset.code) {
+        openModal(card.dataset.code);
+      }
+    });
+  }
+  function handleSearch(e) {
+    const term = e.target.value.toLowerCase().trim();
+    state.filteredCountries = term
+      ? state.allCountries.filter(c => (c.name.common || '').toLowerCase().includes(term))
+      : [...state.allCountries];
+      state.currentPage = 1;
+    updatePagination();
+    render();
+  }
+  function updatePagination() {
+    state.totalPages = Math.ceil(state.filteredCountries.length / CONFIG.PAGE_SIZE);
+  }
+  function goToPage(page) {
+    if (page < 1 || page > state.totalPages) return;
+    state.currentPage = page;
+    render();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  function changePage(delta) {
+    goToPage(state.currentPage + delta);
+  }
+  function render() {
+    const { filteredCountries, currentPage } = state;
+    const start = (currentPage - 1) * CONFIG.PAGE_SIZE;
+    const items = filteredCountries.slice(start, start + CONFIG.PAGE_SIZE);
+    const fragment = document.createDocumentFragment();
+    items.forEach(c => {
+      const article = document.createElement('article');
+      article.className = 'card';
+      article.dataset.code = c.cca3; // Store ID on element
+      article.style.cursor = 'pointer';
 
-function safeText(value, fallback = "N/A") {
-  if (value === undefined || value === null) return fallback;
-  if (Array.isArray(value) && value.length === 0) return fallback;
-  if (Array.isArray(value)) return value.join(", ");
-  return String(value);
-}
-function renderCountries() {
-  const start = (currentPage - 1) * PAGE_SIZE;
-  const end = start + PAGE_SIZE;
-  const pageItems = filteredCountries.slice(start, end);
-
-  gridEl.innerHTML = pageItems.map(c => {
-    const name = c?.name?.common ?? "Unknown";
-    const flag = c?.flags?.png || c?.flags?.svg || "";
-    const region = safeText(c?.region);
-    const capital = safeText(c?.capital);
-    const population = formatNumber(c?.population);
-    const cca3 = c.cca3;
-
-    return `
-      <article class="card" onclick="openModal('${cca3}')" style="cursor: pointer;">
-        ${flag ? `<img class="flag" src="${flag}" alt="Flag of ${name}">` : ""}
-        <h3>${name}</h3>
+      article.innerHTML = `
+        <img class="flag" src="${c.flags.png}" alt="${c.name.common}" loading="lazy" />
+        <h3>${c.name.common}</h3>
         <div class="info">
-          <span><b>Region:</b> ${region}</span>
-          <span><b>Capital:</b> ${capital}</span>
-          <span><b>Population:</b> ${population}</span>
+          <span><b>Region:</b> ${safeText(c.region)}</span>
+          <span><b>Capital:</b> ${safeText(c.capital)}</span>
+          <span><b>Pop:</b> ${formatNum(c.population)}</span>
         </div>
-      </article>
-    `;
-  }).join("");
-
-  resultInfoEl.textContent = `Showing ${filteredCountries.length > 0 ? start + 1 : 0}-${Math.min(end, filteredCountries.length)} of ${filteredCountries.length} countries`;
-  updatePaginationUI();
-}
-
-function updatePaginationUI() {
-  prevBtn.disabled = currentPage === 1 || filteredCountries.length === 0;
-  nextBtn.disabled = currentPage === totalPages || filteredCountries.length === 0;
-
-  if (filteredCountries.length === 0) {
-    pageNumbersEl.innerHTML = "";
-    return;
-  }
-
-  const maxButtons = 7;
-  const pages = [];
-
-  if (totalPages <= maxButtons) {
-    for (let p = 1; p <= totalPages; p++) pages.push(p);
-  } else {
-    pages.push(1);
-    let left = Math.max(2, currentPage - 1);
-    let right = Math.min(totalPages - 1, currentPage + 1);
-
-    if (left > 2) pages.push("...");
-    for (let p = left; p <= right; p++) pages.push(p);
-    if (right < totalPages - 1) pages.push("...");
-    pages.push(totalPages);
-  }
-
-  pageNumbersEl.innerHTML = pages.map(p => {
-    if (p === "...") return `<button class="page-number" type="button" disabled>…</button>`;
-    return `<button class="page-number ${p === currentPage ? "active" : ""}" type="button" data-page="${p}">${p}</button>`;
-  }).join("");
-}
-
-function goToPage(page) {
-  const p = Number(page);
-  if (!Number.isFinite(p)) return;
-  if (p < 1 || p > totalPages) return;
-  currentPage = p;
-  renderCountries();
-  window.scrollTo({ top: 0, behavior: "smooth" });
-}
-searchInput.addEventListener("input", (e) => {
-  const term = e.target.value.toLowerCase();
-  filteredCountries = allCountries.filter(c =>
-    (c.name.common || "").toLowerCase().includes(term)
-  );
-  currentPage = 1;
-  totalPages = Math.ceil(filteredCountries.length / PAGE_SIZE);
-  renderCountries();
-});
-
-window.openModal = async function (cca3) {
-  const country = allCountries.find(c => c.cca3 === cca3);
-  if (!country) return;
-  const commonName = country.name?.common || "N/A";
-  const officialName = country.name?.official || "N/A";
-  const flag = country.flags?.png || "";
-  const nativeNameObj = country.name?.nativeName || {};
-  const firstNativeKey = Object.keys(nativeNameObj)[0];
-  const nativeName = firstNativeKey ? nativeNameObj[firstNativeKey].common : "N/A";
-
-  const currencyObj = country.currencies || {};
-  const firstCurrKey = Object.keys(currencyObj)[0];
-  const currencySymbol = firstCurrKey ? currencyObj[firstCurrKey].symbol : "N/A";
-
-  const longitude = country.latlng ? country.latlng[1] : "N/A";
-  const latitude = country.latlng ? country.latlng[0] : null;
-
-  let borders = country.borders || [];
-  if (borders.length > 2) borders = borders.slice(-2);
-  const borderString = borders.length > 0 ? borders.join(", ") : "None";
-
-  modalBody.innerHTML = `
-    <div class="modal-header">
-      <img src="${flag}" class="modal-flag" alt="Flag">
-      <div class="modal-title">
-        <h2>${commonName}</h2>
-        <span class="modal-subtitle">${officialName}</span>
-      </div>
-    </div>
-    
-    <div class="detail-row"><span class="detail-label">Native Name:</span> ${nativeName}</div>
-    <div class="detail-row"><span class="detail-label">Symbol:</span> ${currencySymbol}</div>
-    <div class="detail-row"><span class="detail-label">Longitude:</span> ${longitude}</div>
-    <div class="detail-row"><span class="detail-label">Borders (End):</span> ${borderString}</div>
-
-    <div id="weatherContainer" class="weather-box">
-      <span>Loading weather...</span>
-    </div>
-  `;
-
-  modal.showModal();
-
-  if (latitude !== null && longitude !== "N/A") {
-    fetchWeather(latitude, longitude);
-  } else {
-    document.getElementById("weatherContainer").innerHTML = "<span>Weather Unavailable</span>";
-  }
-};
-
-closeModalBtn.addEventListener(("click"), () => modal.close());
-modal.addEventListener("click", (e) => {
-  if (e.target === modal) modal.close();
-});
-
-async function fetchWeather(lat, lon) {
-  const weatherEl = document.getElementById("weatherContainer");
-  try {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code&timezone=auto`;
-    const res = await fetch(url);
-    const data = await res.json();
-
-    const current = data.current;
-    if (!current) throw new Error("No data");
-
-    const temp = current.temperature_2m;
-    const humidity = current.relative_humidity_2m;
-    const code = current.weather_code;
-    const unit = data.current_units.temperature_2m;
-
-    const weatherText = getWeatherText(code);
-
-    weatherEl.innerHTML = `
-      <div class="weather-meta">
-        <span style="font-weight:600; font-size:14px; color:#0c4a6e;">CURRENT WEATHER</span>
-        <span><b>Condition:</b> ${weatherText}</span>
-        <span><b>Humidity:</b> ${humidity}%</span>
-      </div>
-      <div class="weather-temp">${temp}${unit}</div>
-    `;
-
-  } catch (err) {
-    weatherEl.innerHTML = `<span style="color:#b91c1c">Failed to load weather</span>`;
-    console.error(err);
-  }
-}
-
-function getWeatherText(code) {
-  if (code === 0) return "Clear Sky";
-  if (code >= 1 && code <= 3) return "Partly Cloudy";
-  if (code >= 45 && code <= 48) return "Foggy";
-  if (code >= 51 && code <= 67) return "Rain";
-  if (code >= 71 && code <= 77) return "Snow";
-  if (code >= 95) return "Thunderstorm";
-  return "Variable";
-}
-
-async function loadCountries() {
-  try {
-    resultInfoEl.textContent = "Loading countries...";
-    const url = "https://restcountries.com/v3.1/all?fields=name,flags,region,capital,population,currencies,latlng,borders,cca3";
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Request failed: ${res.status}`);
-    const data = await res.json();
-
-    allCountries = data.sort((a, b) => {
-      const an = (a?.name?.common || "").toLowerCase();
-      const bn = (b?.name?.common || "").toLowerCase();
-      return an.localeCompare(bn);
+      `;
+      fragment.appendChild(article);
     });
 
-    filteredCountries = [...allCountries];
-    totalPages = Math.ceil(filteredCountries.length / PAGE_SIZE);
-    currentPage = 1;
-    renderCountries();
+    ui.grid.innerHTML = '';
+    ui.grid.appendChild(fragment);
 
-  } catch (err) {
-    resultInfoEl.textContent = "Failed to load data.";
-    gridEl.innerHTML = `<p style="padding:12px;color:#b91c1c;">Error: ${err.message}</p>`;
+    // Update UI Infos
+    const end = Math.min(start + CONFIG.PAGE_SIZE, filteredCountries.length);
+    ui.info.textContent = filteredCountries.length
+      ? `Showing ${start + 1}-${end} of ${filteredCountries.length}`
+      : 'No results found';
+
+    // Render Pagination
+    renderPaginationControls();
   }
-}
 
-pageNumbersEl.addEventListener("click", (e) => {
-  const btn = e.target.closest("button[data-page]");
-  if (!btn) return;
-  goToPage(btn.dataset.page);
-});
-prevBtn.addEventListener("click", () => goToPage(currentPage - 1));
-nextBtn.addEventListener("click", () => goToPage(currentPage + 1));
+  function renderPaginationControls() {
+    ui.prevBtn.disabled = state.currentPage === 1 || state.filteredCountries.length === 0;
+    ui.nextBtn.disabled = state.currentPage === state.totalPages || state.filteredCountries.length === 0;
 
-loadCountries();
+    const { currentPage, totalPages } = state;
+    if (state.filteredCountries.length === 0) {
+      ui.pageNumbers.innerHTML = '';
+      return;
+    }
+
+    let pages = [];
+    if (totalPages <= 7) {
+      pages = Array.from({ length: totalPages }, (_, i) => i + 1);
+    } else {
+      if (currentPage < 4) pages = [1, 2, 3, 4, '...', totalPages];
+      else if (currentPage > totalPages - 3) pages = [1, '...', totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+      else pages = [1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages];
+    }
+
+    const html = pages.map(p => {
+      if (p === '...') return '<button class="page-number" disabled>…</button>';
+      return `<button class="page-number ${p === currentPage ? 'active' : ''}" data-page="${p}">${p}</button>`;
+    }).join('');
+
+    ui.pageNumbers.innerHTML = html;
+  }
+
+  // --- Modal & Weather ---
+
+  async function openModal(cca3) {
+    const country = state.allCountries.find(c => c.cca3 === cca3);
+    if (!country) return;
+
+    const nativeName = country.name.nativeName
+      ? Object.values(country.name.nativeName)[0].common
+      : 'N/A';
+    const currency = country.currencies
+      ? Object.values(country.currencies)[0].symbol
+      : 'N/A';
+    const lat = country.latlng ? country.latlng[0] : null;
+    const lon = country.latlng ? country.latlng[1] : null;
+
+    // Build Modal Content
+    ui.modalBody.innerHTML = `
+      <div class="modal-header">
+        <img src="${country.flags.png}" class="modal-flag" alt="Flag">
+        <div class="modal-title">
+          <h2>${country.name.common}</h2>
+          <span class="modal-subtitle">${country.name.official}</span>
+        </div>
+      </div>
+      <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px;">
+        <div class="detail-row"><b>Native:</b> ${nativeName}</div>
+        <div class="detail-row"><b>Currency:</b> ${currency}</div>
+        <div class="detail-row"><b>Region:</b> ${country.region}</div>
+        <div class="detail-row"><b>Subregion:</b> ${safeText(country.subregion)}</div>
+      </div>
+      
+      <div id="weatherBox" class="weather-box">
+        Loading Weather...
+      </div>
+    `;
+
+    ui.modal.showModal();
+    ui.modal.classList.add('open'); // For any custom animations
+
+    // Fetch Weather if coordinates exist
+    if (lat !== null && lon !== null) {
+      await loadWeather(lat, lon);
+    } else {
+      document.getElementById('weatherBox').textContent = 'Weather data unavailable (No coordinates)';
+    }
+  }
+
+  function closeModal() {
+    ui.modal.close();
+    ui.modal.classList.remove('open');
+  }
+
+  async function loadWeather(lat, lon) {
+    const box = document.getElementById('weatherBox');
+    try {
+      const res = await fetch(CONFIG.API_WEATHER(lat, lon));
+      const data = await res.json();
+
+      if (!data.current) throw new Error('No weather data');
+
+      const { temperature_2m, relative_humidity_2m, weather_code } = data.current;
+      const unit = data.current_units.temperature_2m;
+
+      box.innerHTML = `
+        <div class="weather-meta">
+          <span style="font-weight:700; color:#0369a1; text-transform:uppercase; font-size:12px; margin-bottom:4px;">Current Weather</span>
+          <div>${getWeatherText(weather_code)}</div>
+          <div style="font-size:13px; opacity:0.8;">Humidity: ${relative_humidity_2m}%</div>
+        </div>
+        <div class="weather-temp">${temperature_2m}${unit}</div>
+      `;
+    } catch (e) {
+      box.innerHTML = '<span style="color:red">Weather unavailable</span>';
+    }
+  }
+
+  // --- Bootstrap ---
+  init();
+
+})();
