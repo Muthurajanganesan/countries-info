@@ -1,14 +1,17 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Countries</title>
   <link rel="stylesheet" href="style.css" />
 </head>
+
 <body>
   <header class="topbar">
     <h1>Countries</h1>
+    <input type="search" id="searchInput" placeholder="Search for a country..." class="search-input" />
     <div class="meta">
       <span id="resultInfo">Loading...</span>
     </div>
@@ -19,13 +22,20 @@
 
     <nav class="pagination" aria-label="Pagination">
       <button id="prevBtn" class="page-btn" type="button">← Prev</button>
-
       <div id="pageNumbers" class="page-numbers"></div>
-
       <button id="nextBtn" class="page-btn" type="button">Next →</button>
     </nav>
   </main>
 
+  <dialog id="countryModal" class="modal">
+    <div class="modal-content">
+      <button id="closeModalBtn" class="close-btn">&times;</button>
+      <div id="modalBody">
+      </div>
+    </div>
+  </dialog>
+
   <script src="index.js"></script>
 </body>
+
 </html>
